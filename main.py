@@ -40,12 +40,12 @@ def search_user(username):
     try:
         for actor in drain_all_actors(username):
             print(f"{actor.did} {actor.handle} -- {actor.display_name}")
-    except requests.exceptions.RequestException as e:
-        click.echo(f"Error: {e}")
+    except Exception as e:
+        click.echo(f"An exception occurred: {e}")
 
 
 def extract_did(line):
-    return line.split(" ")[0]
+    return line[0:32]
 
 
 @backoff.on_exception(
@@ -95,12 +95,17 @@ def add_to_moderation_list(list_name, filename):
 
         for line in lines:
             did = extract_did(line)
+            if not did.startswith("did:plc:"):
+                click.echo(f"{did} doesn't look like a DID, skipping...")
             click.echo(f"Adding record to modlist: {line}")
-            create_atproto_list_item(new_modlist['uri'], did, my_did)
+            try:
+                create_atproto_list_item(new_modlist['uri'], did, my_did)
+            except Exception as e:
+                click.echo(f"Failed to add {did} to modlist, continuing...")
 
         click.echo(f"Added {len(lines)} user(s) to the moderation list.")
-    except requests.exceptions.RequestException as e:
-        click.echo(f"Error: {e}")
+    except Exception as e:
+        click.echo(f"An error occurred: {e}")
 
 
 @click.group()
