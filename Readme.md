@@ -57,6 +57,7 @@ bskymodlist all-likes "{link to racist post}" >> people-i-would-rather-not-inter
 bskymodlist --list-name "Outcasts" \
    --list-description "People I would rather not interact with" \
    people-i-would-rather-not-interact-with.txt
+
 ```
 
 This project comes with no warranty whatsoever. Don't use it in violation of the Bluesky terms

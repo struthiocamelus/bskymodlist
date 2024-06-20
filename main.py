@@ -51,6 +51,17 @@ def search_user(username):
         click.echo(f"An exception occurred: {e}")
 
 
+def search_exact_user_by_handle(username):
+    """Search for an exact user on Bluesky by username"""
+    try:
+        for actor in drain_all_actors(username):
+            if actor.handle == username:
+                return actor
+        return None
+    except Exception as e:
+        click.echo(f"An exception occurred: {e}")
+
+
 def extract_did(line):
     return line[0:32]
 
@@ -160,21 +171,33 @@ def find_all_lists():
 def find_all_likes(post):
     """Parse a bsky post url and convert it into an at-uri"""
     matches = re.match(r"https://bsky\.app/profile/([^/]+)/post/([^/]+)", post)
-    if not matches[1].startswith("did:plc:") or len(matches[1]) != 32 or len(matches[2]) != 13:
+    if (not (matches[1].startswith("did:plc:") and len(matches[1]) != 32)
+            and not (matches[1].endswith(".bsky.social"))) or len(matches[2]) != 13:
         click.echo(f"Invalid post URL specified: {post}")
         click.echo("Posts should be in the format: https://bsky.app/profile/did:plc:{did}/post/{key}")
         sys.exit(1)
-    uri = f"at://{matches[1]}/app.bsky.feed.post/{matches[2]}"
+    user_did = matches[1]
+    if user_did.endswith(".bsky.social"):
+        user_did = search_exact_user_by_handle(user_did).did
+    uri = f"at://{user_did}/app.bsky.feed.post/{matches[2]}"
     for liker in drain_bsky_likes(uri):
         print(format_actor(liker.actor))
+
+
+def read_from_file(filename=None):
+    if filename is None or filename == "-":
+        for line in sys.stdin:
+            yield line
+    else:
+        with open(filename, 'r') as file:
+            for line in file.read():
+                yield line
 
 
 def add_to_moderation_list(list_name=None, list_description=None, list_did=None, filename=None):
     """Add users from a newline delimited file to the moderation list."""
     try:
         my_did = atproto_client_info['login_response']['did']
-        with open(filename, 'r') as file:
-            lines = file.read().splitlines()
 
         if list_name is not None:
             moderation_list = create_atproto_list(list_name, list_description, my_did)
@@ -184,17 +207,19 @@ def add_to_moderation_list(list_name=None, list_description=None, list_did=None,
         else:
             raise RuntimeError("This should never happen")
 
-        for line in lines:
+        num_lines = 0
+        for line in read_from_file(filename):
+            num_lines += 1
             did = extract_did(line)
             if not did.startswith("did:plc:"):
                 click.echo(f"{did} doesn't look like a DID, skipping...")
             click.echo(f"Adding record to modlist: {line}")
             try:
                 create_atproto_list_item(moderation_list['uri'], did, my_did)
-            except Exception as e:
+            except Exception:
                 click.echo(f"Failed to add {did} to modlist, continuing...")
 
-        click.echo(f"Added {len(lines)} user(s) to the moderation list.")
+        click.echo(f"Added {num_lines} user(s) to the moderation list.")
     except Exception as e:
         click.echo(f"An error occurred: {e}")
 
@@ -210,7 +235,7 @@ def cli(config):
         config_file_contents = json.load(open(config))
         atproto_username = config_file_contents['atproto_username']
         atproto_app_password = config_file_contents['atproto_app_password']
-    except:
+    except Exception:
         click.echo("No configuration file specified, getting credentials from command line.")
     if atproto_username is None:
         atproto_username = os.environ.get("ATPROTO_USERNAME", None)
@@ -247,13 +272,13 @@ def find_lists():
 @click.option("--list-name", help="Name of the list (if new)")
 @click.option("--list-description", help="List description (if new)")
 @click.option("--list-key", help="Key of existing list. Use find-lists to find your lists.")
-@click.argument('filename', type=click.Path(exists=True))
-def add(list_name, list_description, list_did, filename):
-    if list_name is None and list_did is None or list_name is not None and list_did is not None:
+@click.argument('filename', type=click.Path(exists=True, allow_dash=True))
+def add(list_name, list_description, list_key, filename):
+    """Add users from a newline delimited file to the moderation list."""
+    if list_name is None and list_key is None or list_name is not None and list_key is not None:
         click.echo("Only one of --list-name or --list-did is required. Use --help for help.")
         sys.exit(1)
-    """Add users from a newline delimited file to the moderation list."""
-    add_to_moderation_list(list_name, list_description, list_did, filename)
+    add_to_moderation_list(list_name, list_description, list_key, filename)
 
 
 if __name__ == '__main__':
